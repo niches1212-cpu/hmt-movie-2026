@@ -995,8 +995,15 @@ async function renderAdmin(){
   </div>
   <div style="margin-top:16px;border-top:1px solid var(--dark-4);padding-top:14px">
     <div style="font-size:11px;color:var(--text-dim);letter-spacing:1px;margin-bottom:8px">▸ 更新社員名單 CSV（格式：中文姓名,工號,email）</div>
-    <div class="upload-area" style="padding:12px"><input type="file" accept=".csv,.txt" onchange="adminLoadCSV(event)"/><div style="font-size:12px;color:var(--text-dim)">📄 點擊上傳社員名單 CSV（中文姓名,工號,email）</div></div>
-    <div id="csvMsg2" style="font-size:11px;color:var(--green);margin-top:6px"></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label style="display:inline-flex;align-items:center;gap:8px;padding:9px 16px;background:var(--primary);color:#fff;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;transition:background .2s;letter-spacing:.5px"
+        onmouseover="this.style.background='var(--primary-light)'" onmouseout="this.style.background='var(--primary)'">
+        📄 選擇 CSV 社員名單
+        <input type="file" accept=".csv,.txt" onchange="adminLoadCSV(event)" style="display:none"/>
+      </label>
+      <span style="font-size:11px;color:var(--text-dim)">格式：公司別,工號,中文姓名,email（或 中文姓名,工號,email）</span>
+    </div>
+    <div id="csvMsg2" style="font-size:12px;margin-top:8px;padding:8px 12px;border-radius:6px;display:none"></div>
   </div>`;
 }
 
@@ -1051,35 +1058,48 @@ function adminLoadCSV(e){
   r.onload=ev=>{
     const text=ev.target.result.replace(/^\uFEFF/,'');
     const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-    // 支援兩種格式：
-    // 格式A（社員名單）：中文姓名,工號,email
-    // 格式B（舊格式）：公司別,工號,姓名,身分
-    const isHeaderRow=lines[0].includes('姓名')||lines[0].includes('工號')||lines[0].includes('email');
-    const dataLines=isHeaderRow?lines.slice(1):lines;
+    // 自動跳過標題列
+    const isHeader=lines[0].includes('姓名')||lines[0].includes('工號')||lines[0].includes('email')||lines[0].includes('Email')||lines[0].includes('公司');
+    const dataLines=isHeader?lines.slice(1):lines;
     let loaded=0,skipped=0;
     const newList=[];
     dataLines.forEach(l=>{
       const parts=l.split(',').map(s=>s.trim());
       if(parts.length<2){skipped++;return;}
-      let name,id,email='';
-      // 判斷格式A：第1欄有@或第3欄有@ → 格式A
-      if(parts.length>=3&&parts[2].includes('@')){
-        // 格式A: 姓名,工號,email
+      let name='',id='',email='',company='';
+      if(parts.length>=4&&(parts[3].includes('@')||parts[2].includes('@'))){
+        // 格式：公司別,工號,中文姓名,email[,身分]
+        company=parts[0];id=parts[1];name=parts[2];email=parts[3];
+      }else if(parts.length>=3&&parts[2].includes('@')){
+        // 格式：中文姓名,工號,email
         name=parts[0];id=parts[1];email=parts[2];
+      }else if(parts.length>=4){
+        // 格式：公司別,工號,中文姓名,身分
+        company=parts[0];id=parts[1];name=parts[2];
       }else if(parts.length>=3){
-        // 格式B: 公司別,工號,姓名[,身分]
-        id=parts[1];name=parts[2];
+        name=parts[0];id=parts[1];
       }else{
         name=parts[0];id=parts[1];
       }
       if(!name||!id){skipped++;return;}
-      if(!newList.find(m=>m.id===id)){newList.push({name,id,email,company});loaded++;}
+      if(!newList.find(m=>m.id===id)){
+        newList.push({name,id,email,company});loaded++;
+      }
     });
+    if(loaded===0){
+      const el=$('csvMsg2');
+      if(el){el.textContent='⚠ 未讀取到任何資料，請確認 CSV 格式正確（標題列：公司別,工號,中文姓名,email）';el.style.display='block';el.style.background='#FEF3C7';el.style.color='#92400E';}
+      return;
+    }
     MEMBERS.length=0;
     newList.forEach(m=>MEMBERS.push(m));
     const el=$('csvMsg2');
-    if(el)el.textContent=`✓ 社員名單已更新：共 ${loaded} 筆（略過 ${skipped} 筆）`;
+    if(el){el.textContent=`✓ 社員名單已更新：共 ${loaded} 筆（略過 ${skipped} 筆空白列）`;el.style.display='block';el.style.background='var(--green-bg)';el.style.color='#15803D';}
     toast(`✓ 社員名單已更新（${loaded} 筆）`);
+  };
+  r.onerror=()=>{
+    const el=$('csvMsg2');
+    if(el)el.textContent='❌ 讀取失敗，請確認檔案格式為 CSV';
   };
   r.readAsText(file,'UTF-8');
 }
